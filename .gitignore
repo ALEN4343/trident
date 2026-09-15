@@ -28,3 +28,7 @@ samples/
 web/public/sample-*.jpg
 
 api/artifacts/
+
+web/public/sar/
+
+api/.wheels/
