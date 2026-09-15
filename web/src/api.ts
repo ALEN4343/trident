@@ -21,7 +21,11 @@ export async function analyse(
   file: File,
   pose: DeclaredPose,
   ecologicalSensitivity: number,
-  sensitivity = 0.2,
+  // Floating litter is small and far from the camera, so genuine detections
+  // land well below the threshold tuned for close-up COCO objects. 0.12 is
+  // where a bottle on open water becomes visible without the frame filling
+  // with noise.
+  sensitivity = 0.12,
 ): Promise<Analysis> {
   const form = new FormData();
   form.append("image", file);
