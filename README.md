@@ -45,18 +45,50 @@ human approves the mission and every uncertain or hazardous pickup.
 | `trident/geo` | Done - pose model, ray/plane projection, footprint, uncertainty |
 | `trident/drift` | Done - live Open-Meteo forcing, RK4 advection, forward and reverse |
 | `trident/severity` | Done - five-component MPSI with a confidence band |
-| `trident/vision` | Not started |
-| `trident/mission` | Not started |
-| `web/` | Not started |
+| `trident/vision` | Done - YOLO instance branch, physics branch, confuser rejection |
+| `trident/mission` | Done - clustering, drift-aware routing, approval gates, simulator |
+| `trident/api` | Done - upload, drift, planning, gates, telemetry socket |
+| `web/` | Done - mission control UI |
+
+The end-to-end loop runs: upload an image, get per-object coordinates on a
+satellite map, forecast drift, plan a route, clear the approval gates, and
+watch the simulated vessel fly it.
 
 ## Running it
 
+Two processes. Backend:
+
 ```bash
-cd api
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"
-.venv/Scripts/python -m pytest -q
+cd api && python -m venv .venv && .venv/Scripts/python -m pip install -e ".[dev,vision]" && .venv/Scripts/python -m uvicorn trident.api.main:app --port 8000
 ```
+
+Frontend:
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Then open http://localhost:5173. Tests:
+
+```bash
+cd api && .venv/Scripts/python -m pytest -q
+```
+
+## Known limits
+
+Honest about what this is at the end of a short build:
+
+- **The instance detector is COCO-pretrained, not fine-tuned.** It reliably
+  finds bottles, cups and glassware at close range and misses small litter in
+  wide aerial shots, which is most of a real survey frame. Fine-tuning on
+  merged TACO and TrashCan against the taxonomy mapping is the fix, and the
+  mapping table already exists for it.
+- **The physics branch is calibrated on synthetic scenes.** The oil / foam /
+  glint separation behaves correctly on constructed fixtures and on some real
+  photographs, but the thresholds have not been fitted to a labelled set.
+- **Water segmentation is a heuristic**, not a learned segmenter. It handles
+  sky, vegetation and dry sand; it will mislabel very turbid brown water.
+- Sessions live in memory, so a backend restart clears them.
 
 ## Design notes
 

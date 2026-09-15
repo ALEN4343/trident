@@ -85,14 +85,23 @@ def water_mask(rgb: np.ndarray) -> np.ndarray:
     hue, sat, val = hsv[..., 0], hsv[..., 1] / 255.0, hsv[..., 2] / 255.0
     h, w = hue.shape
 
+    f = rgb.astype(np.float32) / 255.0
+    warmth = f[..., 0] - f[..., 2]  # red minus blue
+
     # Sky: bright, weakly saturated, and near the top of the frame.
     rows = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None]
     sky = (val > 0.78) & (sat < 0.30) & (rows < 0.45)
 
-    # Vegetation and bare land sit in the green/yellow hues at real saturation.
-    land = (hue > 20) & (hue < 45) & (sat > 0.35) & (val > 0.25)
+    # Vegetation sits in the green/yellow hues at real saturation.
+    vegetation = (hue > 20) & (hue < 45) & (sat > 0.35) & (val > 0.25)
 
-    mask = ~(sky | land)
+    # Dry sand and bare ground: red dominant over blue, and bright with it.
+    # Brightness is part of the test because turbid or sediment-laden water is
+    # also red-dominant but much darker, and excluding it would delete exactly
+    # the plumes this system is meant to find.
+    sand = (warmth > 0.045) & (val > 0.50)
+
+    mask = ~(sky | vegetation | sand)
     kernel = np.ones((9, 9), np.uint8)
     mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)

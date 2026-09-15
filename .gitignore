@@ -21,3 +21,8 @@ runs/
 .env.local
 .DS_Store
 Thumbs.db
+
+sample_scene.png
+
+samples/
+web/public/sample-*.jpg

@@ -196,6 +196,42 @@ def _polygon(mask: np.ndarray, max_points: int = 40) -> list[tuple[int, int]]:
     return [(int(x), int(y)) for x, y in approx]
 
 
+def _floating(
+    water: np.ndarray,
+    bbox: tuple[float, float, float, float],
+    *,
+    margin: float = 0.7,
+    threshold: float = 0.35,
+) -> bool:
+    """Is this object surrounded by water?
+
+    Tests the ring around the object rather than the object itself. A floating
+    bottle is not water-coloured -- that is precisely why the detector found
+    it -- so sampling its own pixels would reject every genuine detection. What
+    separates litter in the sea from litter on the beach is what lies around
+    it.
+    """
+    height, width = water.shape
+    x1, y1, x2, y2 = bbox
+    pad_x = max(4.0, (x2 - x1) * margin)
+    pad_y = max(4.0, (y2 - y1) * margin)
+
+    ox1, oy1 = int(max(0, x1 - pad_x)), int(max(0, y1 - pad_y))
+    ox2, oy2 = int(min(width, x2 + pad_x)), int(min(height, y2 + pad_y))
+    ix1, iy1 = int(max(0, x1)), int(max(0, y1))
+    ix2, iy2 = int(min(width, x2)), int(min(height, y2))
+    if ox2 <= ox1 or oy2 <= oy1:
+        return False
+
+    outer = water[oy1:oy2, ox1:ox2]
+    ring_total = outer.size - max(0, (ix2 - ix1) * (iy2 - iy1))
+    if ring_total <= 0:
+        return bool(outer.mean() >= threshold)
+
+    ring_water = int(outer.sum()) - int(water[iy1:iy2, ix1:ix2].sum())
+    return ring_water / ring_total >= threshold
+
+
 def _classify_candidates(
     stack: indices.IndexStack, water_px: int
 ) -> tuple[list[RegionDetection], list[Rejection]]:
@@ -301,9 +337,7 @@ def analyse(
         x1, y1, x2, y2 = raw.bbox
         cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
-        # A detection whose centre is not on water is on the beach, a boat or
-        # the shoreline, and is not this scene's pollution.
-        if 0 <= int(cy) < height and 0 <= int(cx) < width and not water[int(cy), int(cx)]:
+        if not _floating(water, raw.bbox):
             continue
 
         cls = taxonomy[raw.class_id]
