@@ -46,9 +46,10 @@ human approves the mission and every uncertain or hazardous pickup.
 | `trident/drift` | Done - live Open-Meteo forcing, RK4 advection, forward and reverse |
 | `trident/severity` | Done - five-component MPSI with a confidence band |
 | `trident/vision` | Done - YOLO instance branch, physics branch, confuser rejection |
+| `trident/sar` | Done - trained DeepLabv3+ oil segmenter, carried over from SAMUDRA |
 | `trident/mission` | Done - clustering, drift-aware routing, approval gates, simulator |
 | `trident/api` | Done - upload, drift, planning, gates, telemetry socket |
-| `web/` | Done - mission control UI |
+| `web/` | Done - mission control UI, optical and SAR modes |
 
 The end-to-end loop runs: upload an image, get per-object coordinates on a
 satellite map, forecast drift, plan a route, clear the approval gates, and
@@ -73,6 +74,39 @@ Then open http://localhost:5173. Tests:
 ```bash
 cd api && .venv/Scripts/python -m pytest -q
 ```
+
+## Two sensors, not two opinions
+
+Oil is detected twice over, by genuinely different physics, and the two are
+deliberately not merged:
+
+**Optical** (`trident/vision`) reads a thin interference film in visible light.
+Oil is iridescent at low saturation, and it damps capillary waves, so a slick
+is a smooth anomaly inside an otherwise wave-textured field — the optical
+equivalent of the dark-spot step used on radar. Costs nothing to run and works
+on any photograph.
+
+**SAR** (`trident/sar`) is a trained DeepLabv3+ over Sentinel-1 and PALSAR
+backscatter, carried over from SAMUDRA. Radar does not see colour at all; it
+sees that oil has flattened the sea surface so the return drops. It works at
+night, through cloud, and over whole coastlines.
+
+They are exposed as separate modes because handing a phone photograph to a
+model trained on radar backscatter produces a confident mask of nothing. The
+per-sensor evaluation in training exists for the same reason: PALSAR is L-band
+and Sentinel-1 is C-band, so a model scoring well on one and badly on the other
+has learned a sensor rather than oil.
+
+### Training the oil segmenter
+
+```bash
+cd api && .venv/Scripts/python scripts/train_oil.py --epochs 12 --batch-size 8
+```
+
+Points at the SOS dataset (6,455 train / 1,615 test image-mask pairs) plus
+5,538 image-level labels driving an auxiliary head. The checkpoint records
+`representative`, true only for a full GPU run, and that flag is surfaced in
+the UI next to every mask it produces.
 
 ## Known limits
 
