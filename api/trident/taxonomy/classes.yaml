@@ -1,0 +1,453 @@
+# TRIDENT pollution taxonomy
+#
+# This file is the single source of truth. The detector maps its raw class ids
+# here; the severity index, the drift model and the mission planner all read
+# their physics and policy from these entries. Changing a number here changes
+# system behaviour end to end -- there are no hardcoded class lists elsewhere.
+version: 1
+
+# ---------------------------------------------------------------------------
+# Detection groups. `modality` decides which branch of the pipeline owns it.
+#   instance -> countable objects, YOLO instance segmentation
+#   region   -> amorphous surface phenomena, semantic segmentation + indices
+#   confuser -> looks like pollution, is not. Detected so it can be REJECTED.
+# ---------------------------------------------------------------------------
+groups:
+  macroplastic:   { label: "Macroplastic",        colour: "#22d3ee" }
+  ghost_gear:     { label: "Ghost Fishing Gear",  colour: "#f43f5e" }
+  metal_glass:    { label: "Metal & Glass",       colour: "#a78bfa" }
+  rubber:         { label: "Rubber",              colour: "#fb923c" }
+  organic_waste:  { label: "Organic / Low Harm",  colour: "#84cc16" }
+  surface_film:   { label: "Surface Contaminant", colour: "#facc15" }
+  natural:        { label: "Natural Feature",     colour: "#64748b" }
+
+# ---------------------------------------------------------------------------
+# Field reference
+#   persistence_years  : time to environmental degradation
+#   typical_mass_kg    : median item mass, drives payload planning
+#   windage            : fraction of 10 m wind speed added to drift velocity.
+#                        Set by how high the item rides in the water -- this is
+#                        why a styrofoam block and a waterlogged net separate
+#                        over a 6 h forecast.
+#   buoyancy           : high | medium | low | negative (sinks)
+#   entanglement_risk  : harm to fauna by entrapment            [0-1]
+#   ingestion_risk     : harm by being eaten / mistaken as prey  [0-1]
+#   toxicity           : chemical harm to water column           [0-1]
+#   recoverability     : how reliably a surface vehicle can lift it [0-1]
+#   auto_collect       : may the vehicle take it WITHOUT per-item human sign-off
+#   value_inr_per_kg   : Indian scrap market rate, drives recovered-value report
+# ---------------------------------------------------------------------------
+classes:
+
+  # --- Macroplastic --------------------------------------------------------
+  - id: plastic_bottle
+    label: "Plastic Bottle (PET)"
+    group: macroplastic
+    modality: instance
+    persistence_years: 450
+    typical_mass_kg: 0.035
+    windage: 0.030
+    buoyancy: high
+    entanglement_risk: 0.10
+    ingestion_risk: 0.30
+    toxicity: 0.20
+    recoverability: 0.95
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 25
+
+  - id: plastic_bag
+    label: "Plastic Bag"
+    group: macroplastic
+    modality: instance
+    persistence_years: 20
+    typical_mass_kg: 0.008
+    windage: 0.020
+    buoyancy: medium
+    # Highest ingestion risk in the taxonomy: a drifting bag is the classic
+    # jellyfish mimic and is the single largest cause of turtle gut blockage.
+    entanglement_risk: 0.30
+    ingestion_risk: 0.90
+    toxicity: 0.25
+    recoverability: 0.70
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 10
+
+  - id: plastic_film_wrapper
+    label: "Film / Wrapper"
+    group: macroplastic
+    modality: instance
+    persistence_years: 20
+    typical_mass_kg: 0.005
+    windage: 0.025
+    buoyancy: medium
+    entanglement_risk: 0.15
+    ingestion_risk: 0.85
+    toxicity: 0.25
+    recoverability: 0.60
+    auto_collect: true
+    recyclable: false
+    value_inr_per_kg: 4
+
+  - id: food_container
+    label: "Food Container / Cup"
+    group: macroplastic
+    modality: instance
+    persistence_years: 50
+    typical_mass_kg: 0.020
+    windage: 0.030
+    buoyancy: high
+    entanglement_risk: 0.10
+    ingestion_risk: 0.50
+    toxicity: 0.25
+    recoverability: 0.90
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 12
+
+  - id: plastic_fragment
+    label: "Plastic Fragment"
+    group: macroplastic
+    modality: instance
+    persistence_years: 450
+    typical_mass_kg: 0.010
+    windage: 0.020
+    buoyancy: medium
+    entanglement_risk: 0.05
+    ingestion_risk: 0.90
+    toxicity: 0.30
+    recoverability: 0.40
+    auto_collect: true
+    recyclable: false
+    value_inr_per_kg: 6
+
+  - id: styrofoam
+    label: "Styrofoam / EPS"
+    group: macroplastic
+    modality: instance
+    persistence_years: 500
+    typical_mass_kg: 0.050
+    # Rides almost entirely above the waterline, so it is the most
+    # wind-driven item we track and separates fastest from the rest.
+    windage: 0.045
+    buoyancy: high
+    entanglement_risk: 0.05
+    ingestion_risk: 0.80
+    toxicity: 0.40
+    recoverability: 0.80
+    auto_collect: true
+    recyclable: false
+    value_inr_per_kg: 2
+
+  # --- Ghost fishing gear --------------------------------------------------
+  - id: fishing_net
+    label: "Fishing Net"
+    group: ghost_gear
+    modality: instance
+    persistence_years: 600
+    typical_mass_kg: 15.0
+    windage: 0.005
+    buoyancy: low
+    entanglement_risk: 1.00
+    ingestion_risk: 0.20
+    toxicity: 0.20
+    recoverability: 0.30
+    # Never autonomous: a net fouls the collection mechanism and can trap the
+    # vehicle itself. Always routed to a human operator.
+    auto_collect: false
+    recyclable: true
+    value_inr_per_kg: 30
+
+  - id: fishing_rope
+    label: "Rope / Cordage"
+    group: ghost_gear
+    modality: instance
+    persistence_years: 600
+    typical_mass_kg: 2.0
+    windage: 0.010
+    buoyancy: low
+    entanglement_risk: 0.90
+    ingestion_risk: 0.10
+    toxicity: 0.20
+    recoverability: 0.50
+    auto_collect: false
+    recyclable: true
+    value_inr_per_kg: 28
+
+  - id: fishing_line
+    label: "Monofilament Line"
+    group: ghost_gear
+    modality: instance
+    persistence_years: 600
+    typical_mass_kg: 0.10
+    windage: 0.005
+    buoyancy: low
+    entanglement_risk: 0.85
+    ingestion_risk: 0.30
+    toxicity: 0.15
+    recoverability: 0.20
+    auto_collect: false
+    recyclable: false
+    value_inr_per_kg: 5
+
+  - id: buoy_float
+    label: "Buoy / Float"
+    group: ghost_gear
+    modality: instance
+    persistence_years: 450
+    typical_mass_kg: 1.5
+    windage: 0.040
+    buoyancy: high
+    entanglement_risk: 0.30
+    ingestion_risk: 0.05
+    toxicity: 0.15
+    recoverability: 0.90
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 18
+
+  # --- Metal & glass -------------------------------------------------------
+  - id: metal_can
+    label: "Metal Can"
+    group: metal_glass
+    modality: instance
+    persistence_years: 200
+    typical_mass_kg: 0.015
+    windage: 0.015
+    buoyancy: medium
+    entanglement_risk: 0.05
+    ingestion_risk: 0.15
+    toxicity: 0.30
+    recoverability: 0.90
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 110
+
+  - id: drum_canister
+    label: "Drum / Canister"
+    group: metal_glass
+    modality: instance
+    persistence_years: 100
+    typical_mass_kg: 12.0
+    windage: 0.030
+    buoyancy: high
+    entanglement_risk: 0.10
+    ingestion_risk: 0.05
+    # Treated as potentially hazardous by default. Unknown contents in a sealed
+    # drum is a hazmat call, never a robotics call.
+    toxicity: 1.00
+    recoverability: 0.40
+    auto_collect: false
+    recyclable: true
+    value_inr_per_kg: 35
+
+  - id: glass_bottle
+    label: "Glass Bottle"
+    group: metal_glass
+    modality: instance
+    persistence_years: 1000
+    typical_mass_kg: 0.40
+    windage: 0.010
+    buoyancy: negative
+    entanglement_risk: 0.05
+    ingestion_risk: 0.05
+    toxicity: 0.05
+    recoverability: 0.70
+    # Sharp edges damage soft collection mechanisms.
+    auto_collect: false
+    recyclable: true
+    value_inr_per_kg: 2
+
+  # --- Rubber --------------------------------------------------------------
+  - id: tyre
+    label: "Tyre"
+    group: rubber
+    modality: instance
+    persistence_years: 2000
+    typical_mass_kg: 8.0
+    windage: 0.005
+    buoyancy: low
+    entanglement_risk: 0.20
+    ingestion_risk: 0.05
+    toxicity: 0.60
+    recoverability: 0.30
+    auto_collect: false
+    recyclable: true
+    value_inr_per_kg: 5
+
+  - id: footwear_rubber
+    label: "Footwear"
+    group: rubber
+    modality: instance
+    persistence_years: 60
+    typical_mass_kg: 0.30
+    windage: 0.020
+    buoyancy: high
+    entanglement_risk: 0.05
+    ingestion_risk: 0.10
+    toxicity: 0.20
+    recoverability: 0.85
+    auto_collect: true
+    recyclable: false
+    value_inr_per_kg: 3
+
+  # --- Organic / low harm --------------------------------------------------
+  # Present so the system can demonstrably DEPRIORITISE the harmless. A model
+  # that scores cardboard the same as a ghost net is not a useful model.
+  - id: textile_cloth
+    label: "Textile / Cloth"
+    group: organic_waste
+    modality: instance
+    persistence_years: 40
+    typical_mass_kg: 0.30
+    windage: 0.005
+    buoyancy: low
+    entanglement_risk: 0.25
+    ingestion_risk: 0.10
+    toxicity: 0.15
+    recoverability: 0.60
+    auto_collect: true
+    recyclable: false
+    value_inr_per_kg: 4
+
+  - id: paper_cardboard
+    label: "Paper / Cardboard"
+    group: organic_waste
+    modality: instance
+    persistence_years: 0.05
+    typical_mass_kg: 0.020
+    windage: 0.015
+    buoyancy: medium
+    entanglement_risk: 0.02
+    ingestion_risk: 0.05
+    toxicity: 0.02
+    recoverability: 0.70
+    auto_collect: true
+    recyclable: true
+    value_inr_per_kg: 8
+
+  # --- Surface contaminants (region modality) ------------------------------
+  # No instance count. Harm scales with fraction of water surface covered.
+  - id: oil_slick
+    label: "Oil Slick / Sheen"
+    group: surface_film
+    modality: region
+    persistence_years: 0.5
+    windage: 0.030
+    entanglement_risk: 0.10
+    ingestion_risk: 0.60
+    toxicity: 0.95
+    recoverability: 0.10
+    auto_collect: false
+    # Harm contribution per 1% of water surface covered.
+    harm_per_pct_coverage: 2.2
+
+  - id: algal_bloom
+    label: "Algal Bloom"
+    group: surface_film
+    modality: region
+    persistence_years: 0.1
+    windage: 0.015
+    entanglement_risk: 0.05
+    ingestion_risk: 0.30
+    toxicity: 0.70
+    recoverability: 0.05
+    auto_collect: false
+    harm_per_pct_coverage: 1.4
+
+  - id: sewage_plume
+    label: "Sewage / Turbidity Plume"
+    group: surface_film
+    modality: region
+    persistence_years: 0.02
+    windage: 0.010
+    entanglement_risk: 0.02
+    ingestion_risk: 0.25
+    toxicity: 0.80
+    recoverability: 0.00
+    auto_collect: false
+    harm_per_pct_coverage: 1.6
+
+# ---------------------------------------------------------------------------
+# Confusers.
+#
+# These are the reason MARIDA exists as a dataset: on open water, natural
+# features are mistaken for pollution far more often than pollution is missed.
+# We detect them explicitly so the report can state what was considered and
+# thrown out, rather than silently inflating the severity score.
+# ---------------------------------------------------------------------------
+confusers:
+  - id: sea_foam
+    label: "Sea Foam / Spume"
+    group: natural
+    mimics: [oil_slick, algal_bloom, plastic_fragment]
+    discriminator: "Foam is bright, high-texture and short-lived; oil is smooth and damps capillary waves."
+
+  - id: sun_glint
+    label: "Sun Glint"
+    group: natural
+    mimics: [oil_slick]
+    discriminator: "Glint is geometrically tied to the solar azimuth and saturates the sensor; oil sheen is iridescent at low saturation."
+
+  - id: boat_wake
+    label: "Vessel Wake"
+    group: natural
+    mimics: [oil_slick, sea_foam]
+    discriminator: "Wakes are linear, symmetric about a vessel and have a characteristic Kelvin angle."
+
+  - id: sargassum
+    label: "Sargassum / Macroalgae"
+    group: natural
+    mimics: [algal_bloom, plastic_fragment, fishing_net]
+    discriminator: "Strong NIR/red-edge response. Separable by NDVI even when FDI is ambiguous."
+
+  - id: driftwood
+    label: "Driftwood / Organic Debris"
+    group: natural
+    mimics: [plastic_fragment, fishing_rope]
+    discriminator: "Natural texture and matte reflectance; no specular polymer highlight."
+
+  - id: cloud_shadow
+    label: "Cloud Shadow"
+    group: natural
+    mimics: [oil_slick]
+    discriminator: "Uniform darkening with preserved surface texture; oil suppresses texture."
+
+  - id: shallow_seabed
+    label: "Shallow Seabed / Reef"
+    group: natural
+    mimics: [oil_slick, algal_bloom]
+    discriminator: "Static across frames and depth-correlated; pollution advects with the surface current."
+
+# ---------------------------------------------------------------------------
+# Severity model (MPSI, 0-100).
+#
+# Five explainable components. Each is computed, none is hardcoded, and the
+# report shows the breakdown so an operator can argue with the number.
+# ---------------------------------------------------------------------------
+severity:
+  components:
+    density:       { weight: 0.20, description: "Hazard-bearing items per 100 m^2 of water surface" }
+    hazard_load:   { weight: 0.30, description: "Sum of per-item harm, weighted by entanglement, ingestion and toxicity" }
+    coverage:      { weight: 0.25, description: "Fraction of water surface under a contaminant film" }
+    persistence:   { weight: 0.15, description: "Mass-weighted mean degradation time of the debris present" }
+    ecological:    { weight: 0.10, description: "Proximity to protected habitat, reef, mangrove or fishery" }
+
+  # Relative contribution of each harm dimension to a single item's hazard score.
+  harm_dimensions:
+    entanglement_risk: 0.40
+    ingestion_risk:    0.35
+    toxicity:          0.25
+
+  # Items per 100 m^2 that saturates the density component.
+  density_saturation: 12.0
+  # Degradation years that saturates the persistence component.
+  persistence_saturation: 500.0
+
+  bands:
+    - { max: 20,  label: "Minimal",  colour: "#22c55e" }
+    - { max: 40,  label: "Low",      colour: "#84cc16" }
+    - { max: 60,  label: "Moderate", colour: "#facc15" }
+    - { max: 80,  label: "High",     colour: "#f97316" }
+    - { max: 100, label: "Severe",   colour: "#ef4444" }
