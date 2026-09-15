@@ -5,6 +5,100 @@ for what the system does; this file is about who does what next.
 
 ---
 
+## Setting up on a second machine
+
+`.venv/`, `node_modules/`, model weights, datasets and sample images are all
+gitignored, so a fresh clone is code only. Everything below is needed once.
+
+### 1. Clone
+
+```bash
+git clone https://github.com/ALEN4343/trident.git
+cd trident
+```
+
+### 2. Backend
+
+Needs Python 3.11+ (3.13 is what this was built on) and Node 20+.
+
+```bash
+cd api
+python -m venv .venv
+.venv/Scripts/python -m pip install -e ".[dev]"
+.venv/Scripts/python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+.venv/Scripts/python -m pip install ultralytics opencv-python-headless scikit-image
+.venv/Scripts/python -m pytest -q
+```
+
+Expect 55 passing tests. CPU torch is deliberate — the CUDA wheel is 2.6 GB and
+will not download on the college network. Train on Colab instead.
+
+> **If anything fails with `CERTIFICATE_VERIFY_FAILED`:** the campus network
+> terminates TLS at an inspecting proxy whose root certificate is in the
+> Windows store but not in certifi. `truststore` is already a dependency and
+> `trident/__init__.py` installs it into `ssl` at import, which fixes every
+> library that fetches something. If `pip` itself fails, add
+> `--trusted-host pypi.org --trusted-host files.pythonhosted.org`.
+
+### 3. Model weights
+
+The YOLO checkpoint downloads itself on first inference (about 6 MB) as long as
+`import trident` has run, which every entry point does. Nothing to do manually.
+
+The SAR oil checkpoint does **not** exist yet — that is task A2. Until it is
+trained, `/api/sar/status` reports `available: false` and the UI says so
+instead of breaking.
+
+### 4. Frontend
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Vite proxies `/api` and `/ws` to `127.0.0.1:8000`, so run the backend too.
+
+### 5. Test imagery
+
+Not in the repo. Grab a handful of water-body photographs — the pipeline runs
+on anything, and the dropzone accepts drag and drop. For the SAR mode you need
+the SOS dataset, which currently exists only on Alen's machine
+(1.4 GB, `DESKTOP_2/SIH_Demo/data/raw/oilspill/`). Copy it across on a USB
+stick or share the three demo scenes in `web/public/sar/` directly.
+
+---
+
+## Working on two machines without stepping on each other
+
+The split below is by directory precisely so this stays simple.
+
+```bash
+git checkout -b your-name/what-you-are-doing
+# work, commit
+git push -u origin your-name/what-you-are-doing
+```
+
+Then open a PR, or merge to `main` directly if you are moving fast — with two
+people in separate directories, direct-to-main is usually fine.
+
+**Before you start each session:**
+
+```bash
+git pull --rebase origin main
+```
+
+**The one file you will both want to touch** is `web/src/types.ts`, which
+mirrors the API response shapes. If Person A changes what an endpoint returns,
+Person A updates `types.ts` in the same commit and tells Person B. That is the
+whole protocol.
+
+**Do not commit:** `.venv/`, `node_modules/`, `*.pt` weights, datasets,
+`api/artifacts/`. All already gitignored — if `git status` shows any of them,
+something is wrong with the ignore file rather than with you.
+
+---
+
 ## Where things actually stand
 
 **Working end to end.** Upload an image → detections with per-object lat/lon →
