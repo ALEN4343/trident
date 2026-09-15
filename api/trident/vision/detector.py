@@ -23,12 +23,18 @@ log = logging.getLogger(__name__)
 
 _WEIGHTS_DIR = Path(__file__).resolve().parents[2] / "weights"
 _DEFAULT_NAME = "yolo11n-seg.pt"
+_TRASH_NAME = "trash_yolo11n.pt"
 
 # Prefer the checked-out copy so a demo never depends on reaching a CDN.
 DEFAULT_WEIGHTS = str(
     _WEIGHTS_DIR / _DEFAULT_NAME
     if (_WEIGHTS_DIR / _DEFAULT_NAME).exists()
     else _DEFAULT_NAME
+)
+TRASH_WEIGHTS = str(
+    _WEIGHTS_DIR / _TRASH_NAME
+    if (_WEIGHTS_DIR / _TRASH_NAME).exists()
+    else _TRASH_NAME
 )
 
 # COCO label -> taxonomy class. Anything absent is ignored rather than guessed.
@@ -47,6 +53,13 @@ COCO_TO_TAXONOMY: dict[str, str] = {
     "frisbee": "plastic_fragment",
     "sports ball": "plastic_fragment",
     "kite": "plastic_film_wrapper",
+}
+
+TRASH_TO_TAXONOMY: dict[str, str] = {
+    "plastic": "plastic_bottle",
+    "paper": "paper_cardboard",
+    "glass": "glass_bottle",
+    "trash": "plastic_fragment",
 }
 
 # Not pollution. These arm the autonomy interlocks instead.
@@ -84,11 +97,23 @@ def _load(weights: str):
     return YOLO(weights)
 
 
+def _box_iou(box1: tuple[float, float, float, float], box2: tuple[float, float, float, float]) -> float:
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    a1 = max(0.0, box1[2] - box1[0]) * max(0.0, box1[3] - box1[1])
+    a2 = max(0.0, box2[2] - box2[0]) * max(0.0, box2[3] - box2[1])
+    union = a1 + a2 - inter
+    return inter / union if union > 0 else 0.0
+
+
 def detect(
     rgb: np.ndarray,
     *,
     weights: str = DEFAULT_WEIGHTS,
-    confidence: float = 0.25,
+    confidence: float = 0.20,
     imgsz: int = 640,
 ) -> DetectorOutput:
     """Run instance segmentation. Never raises -- a missing model degrades to
@@ -134,6 +159,25 @@ def detect(
             mask = _resize_mask(masks[i], rgb.shape[:2])
 
         detections.append(RawDetection(class_id, label, conf, xyxy, mask))
+
+    # Second pass: specialized marine litter / trash model
+    if Path(TRASH_WEIGHTS).exists():
+        try:
+            trash_model = _load(TRASH_WEIGHTS)
+            trash_result = trash_model.predict(rgb, conf=confidence, imgsz=imgsz, verbose=False)[0]
+            for box in trash_result.boxes:
+                t_label = trash_result.names[int(box.cls)]
+                t_conf = float(box.conf)
+                t_xyxy = tuple(float(v) for v in box.xyxy[0].tolist())
+                t_class = TRASH_TO_TAXONOMY.get(t_label)
+                if not t_class:
+                    continue
+                # Avoid duplicate overlapping detections
+                if any(_box_iou(t_xyxy, d.bbox) > 0.4 for d in detections):
+                    continue
+                detections.append(RawDetection(t_class, t_label, t_conf, t_xyxy, None))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("trash detector failed (%s)", exc)
 
     return DetectorOutput(
         detections=tuple(detections),

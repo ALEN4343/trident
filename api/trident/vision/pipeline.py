@@ -201,7 +201,7 @@ def _floating(
     bbox: tuple[float, float, float, float],
     *,
     margin: float = 0.7,
-    threshold: float = 0.35,
+    threshold: float = 0.15,
 ) -> bool:
     """Is this object surrounded by water?
 
@@ -295,6 +295,7 @@ def analyse(
     uncertainty: PoseUncertainty | None = None,
     ecological_sensitivity: float = 0.0,
     weights: str | None = None,
+    confidence: float = 0.20,
 ) -> Analysis:
     height, width = rgb.shape[:2]
     notes: list[str] = []
@@ -309,7 +310,7 @@ def analyse(
             "density and coverage are unreliable."
         )
 
-    output = detect(rgb, **({"weights": weights} if weights else {}))
+    output = detect(rgb, confidence=confidence, **({"weights": weights} if weights else {}))
     if not output.available:
         notes.append(
             "Instance detector unavailable, so only amorphous contamination "

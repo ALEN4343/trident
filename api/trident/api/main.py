@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from ..drift import DriftConfig, attribute_source, forecast, resolve_forcing, utc_now
 from ..geo import PoseUncertainty
 from ..mission import Mission, Target, VehicleSpec, plan
+from ..severity import RegionCoverage, Scene, compute as compute_mpsi
 from ..mission.vehicle import SimulatedVehicle, execute
 from ..taxonomy import load_taxonomy
 from ..vision import analyse
@@ -125,6 +126,8 @@ async def analyse_upload(
     image: UploadFile = File(...),
     pose: str | None = Form(default=None),
     ecological_sensitivity: float = Form(default=0.0),
+    sensitivity: float = Form(default=0.20),
+    confidence: float | None = Form(default=None),
 ) -> dict:
     raw = await image.read()
     if not raw:
@@ -136,6 +139,7 @@ async def analyse_upload(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"could not read image: {exc}") from exc
 
+    conf = confidence if confidence is not None else sensitivity
     rgb = np.array(pil)
     result = await asyncio.to_thread(
         analyse,
@@ -144,6 +148,7 @@ async def analyse_upload(
         intrinsics=cap.intrinsics,
         uncertainty=PoseUncertainty(),
         ecological_sensitivity=ecological_sensitivity,
+        confidence=conf,
     )
 
     taxonomy_ref = load_taxonomy()

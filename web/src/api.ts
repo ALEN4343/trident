@@ -21,11 +21,13 @@ export async function analyse(
   file: File,
   pose: DeclaredPose,
   ecologicalSensitivity: number,
+  sensitivity = 0.2,
 ): Promise<Analysis> {
   const form = new FormData();
   form.append("image", file);
   form.append("pose", JSON.stringify(pose));
   form.append("ecological_sensitivity", String(ecologicalSensitivity));
+  form.append("sensitivity", String(sensitivity));
   return json<Analysis>(await fetch("/api/analyse", { method: "POST", body: form }));
 }
 

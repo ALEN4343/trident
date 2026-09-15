@@ -32,3 +32,6 @@ api/artifacts/
 web/public/sar/
 
 api/.wheels/
+
+samples2/
+make_deck.py
