@@ -81,3 +81,19 @@ export function missionSocket(missionId: string): WebSocket {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   return new WebSocket(`${protocol}://${location.host}/ws/mission/${missionId}`);
 }
+
+export async function sarStatus(): Promise<import("./types").SARStatus> {
+  return json(await fetch("/api/sar/status"));
+}
+
+export async function analyseSAR(
+  file: File,
+  threshold: number,
+  pose: DeclaredPose,
+): Promise<import("./types").SARAnalysis> {
+  const form = new FormData();
+  form.append("image", file);
+  form.append("threshold", String(threshold));
+  form.append("pose", JSON.stringify(pose));
+  return json(await fetch("/api/sar/analyse", { method: "POST", body: form }));
+}

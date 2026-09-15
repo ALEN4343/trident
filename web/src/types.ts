@@ -164,3 +164,31 @@ export interface Telemetry {
   seq: number;
   message: string;
 }
+
+export interface SARStatus {
+  available: boolean;
+  path: string;
+  reason?: string;
+  representative?: boolean;
+  epoch?: number | null;
+  oil_iou?: number | null;
+  size_mb?: number;
+}
+
+export interface SARAnalysis {
+  image: { width: number; height: number };
+  oil_fraction: number;
+  coverage_percent: number;
+  threshold: number;
+  polygons_px: [number, number][][];
+  slick_count: number;
+  severity: { score: number; band: string; colour: string };
+  model: {
+    checkpoint: string;
+    representative: boolean;
+    epoch: number | null;
+    oil_iou: number | null;
+    caveat: string | null;
+  };
+  location: { lat: number; lon: number } | null;
+}

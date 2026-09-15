@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
 import type { DeclaredPose } from "./api";
-import type { Analysis, Drift, Mission, Telemetry } from "./types";
+import type { Analysis, Drift, Mission, SARAnalysis, SARStatus, Telemetry } from "./types";
 import ScenePanel from "./components/ScenePanel";
 import AnalysisPanel from "./components/AnalysisPanel";
 import MissionPanel from "./components/MissionPanel";
 import MapView from "./components/MapView";
 import ImageryView from "./components/ImageryView";
+import SarPanel from "./components/SarPanel";
+import SarView from "./components/SarView";
 
 const STAGES = ["DETECT", "LOCALISE", "ATTRIBUTE", "FORECAST", "DISPATCH", "VERIFY"] as const;
 
@@ -19,7 +21,10 @@ const INITIAL_POSE: DeclaredPose = {
   hfov_deg: 84,
 };
 
+type Mode = "optical" | "sar";
+
 export default function App() {
+  const [mode, setMode] = useState<Mode>("optical");
   const [pose, setPose] = useState<DeclaredPose>(INITIAL_POSE);
   const [sensitivity, setSensitivity] = useState(0.3);
   const [file, setFile] = useState<File | null>(null);
@@ -27,6 +32,10 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [sar, setSar] = useState<SARAnalysis | null>(null);
+  const [sarStatus, setSarStatus] = useState<SARStatus | null>(null);
+  const [sarThreshold, setSarThreshold] = useState(0.5);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"map" | "imagery">("imagery");
@@ -44,8 +53,13 @@ export default function App() {
 
   useEffect(() => () => socket.current?.close(), []);
 
+  useEffect(() => {
+    api.sarStatus().then(setSarStatus).catch(() => setSarStatus(null));
+  }, []);
+
   const reset = () => {
     setAnalysis(null);
+    setSar(null);
     setMission(null);
     setDrift(null);
     setReverseDrift(null);
@@ -55,6 +69,26 @@ export default function App() {
     setError(null);
   };
 
+  const run = useCallback(
+    async (chosen: File, currentMode: Mode) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (currentMode === "sar") {
+          setSar(await api.analyseSAR(chosen, sarThreshold, pose));
+        } else {
+          setAnalysis(await api.analyse(chosen, pose, sensitivity));
+        }
+        setView("imagery");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [pose, sensitivity, sarThreshold],
+  );
+
   const onFile = useCallback(
     async (chosen: File) => {
       reset();
@@ -63,32 +97,30 @@ export default function App() {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(chosen);
       });
-      setBusy(true);
-      try {
-        const result = await api.analyse(chosen, pose, sensitivity);
-        setAnalysis(result);
-        setView("imagery");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
+      await run(chosen, mode);
     },
-    [pose, sensitivity],
+    [mode, run],
   );
 
   const reanalyse = useCallback(async () => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setAnalysis(await api.analyse(file, pose, sensitivity));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [file, pose, sensitivity]);
+    if (file) await run(file, mode);
+  }, [file, mode, run]);
+
+  const switchMode = useCallback(
+    (next: Mode) => {
+      if (next === mode) return;
+      setMode(next);
+      setAnalysis(null);
+      setSar(null);
+      setMission(null);
+      setDrift(null);
+      setReverseDrift(null);
+      setComplete(null);
+      setError(null);
+      if (file) void run(file, next);
+    },
+    [mode, file, run],
+  );
 
   const selectedItem = useMemo(
     () => analysis?.items.find((i) => i.id === selected) ?? null,
@@ -97,8 +129,7 @@ export default function App() {
 
   const runDrift = useCallback(
     async (reverse: boolean) => {
-      const target =
-        selectedItem ?? analysis?.items.find((i) => i.lat !== null) ?? null;
+      const target = selectedItem ?? analysis?.items.find((i) => i.lat !== null) ?? null;
       const lat = target?.lat ?? analysis?.capture.pose?.lat;
       const lon = target?.lon ?? analysis?.capture.pose?.lon;
       if (lat == null || lon == null) return;
@@ -191,7 +222,7 @@ export default function App() {
   const stageOn = (stage: string) => {
     switch (stage) {
       case "DETECT":
-        return !!analysis;
+        return !!analysis || !!sar;
       case "LOCALISE":
         return !!analysis?.georeferenced;
       case "ATTRIBUTE":
@@ -208,6 +239,7 @@ export default function App() {
   };
 
   const hasLocated = !!analysis?.items.some((i) => i.lat !== null);
+  const hasScene = mode === "sar" ? !!sar : !!analysis;
 
   return (
     <div className="app">
@@ -228,6 +260,33 @@ export default function App() {
 
       <div className="columns">
         <aside className="rail left">
+          <section className="panel">
+            <div className="panel-head">Sensor</div>
+            <div className="panel-body">
+              <div className="view-toggle" style={{ position: "static", transform: "none", width: "100%" }}>
+                <button
+                  style={{ flex: 1 }}
+                  className={mode === "optical" ? "on" : ""}
+                  onClick={() => switchMode("optical")}
+                >
+                  OPTICAL
+                </button>
+                <button
+                  style={{ flex: 1 }}
+                  className={mode === "sar" ? "on" : ""}
+                  onClick={() => switchMode("sar")}
+                >
+                  SAR
+                </button>
+              </div>
+              <p className="hint" style={{ marginTop: 9 }}>
+                {mode === "optical"
+                  ? "Photographs and drone frames. Counts debris and reads surface films from visible-light indices."
+                  : "Sentinel-1 or PALSAR backscatter. A trained segmenter that reads how oil flattens the sea surface."}
+              </p>
+            </div>
+          </section>
+
           <ScenePanel
             pose={pose}
             onPose={setPose}
@@ -238,7 +297,7 @@ export default function App() {
             analysis={analysis}
             fileName={file?.name ?? null}
           />
-          {analysis && (
+          {hasScene && (
             <section className="panel">
               <div className="panel-body" style={{ paddingTop: 13 }}>
                 <button className="btn ghost" onClick={reanalyse} disabled={busy}>
@@ -250,18 +309,25 @@ export default function App() {
         </aside>
 
         <main className="stage-area">
-          {analysis && preview ? (
+          {hasScene && preview ? (
             <>
-              <div className="view-toggle">
-                <button className={view === "imagery" ? "on" : ""} onClick={() => setView("imagery")}>
-                  IMAGERY
-                </button>
-                <button className={view === "map" ? "on" : ""} onClick={() => setView("map")}>
-                  MAP
-                </button>
-              </div>
+              {mode === "optical" && (
+                <div className="view-toggle">
+                  <button
+                    className={view === "imagery" ? "on" : ""}
+                    onClick={() => setView("imagery")}
+                  >
+                    IMAGERY
+                  </button>
+                  <button className={view === "map" ? "on" : ""} onClick={() => setView("map")}>
+                    MAP
+                  </button>
+                </div>
+              )}
 
-              {view === "imagery" ? (
+              {mode === "sar" && sar ? (
+                <SarView src={preview} result={sar} />
+              ) : view === "imagery" && analysis ? (
                 <ImageryView
                   src={preview}
                   analysis={analysis}
@@ -313,9 +379,9 @@ export default function App() {
             <div className="empty">
               <h2>No scene loaded</h2>
               <p>
-                Drop a water body image on the left. TRIDENT will classify pollution, place each
-                detection on the map, forecast where it drifts, and plan a cleanup route you
-                authorise.
+                {mode === "optical"
+                  ? "Drop a water body image on the left. TRIDENT will classify pollution, place each detection on the map, forecast where it drifts, and plan a cleanup route you authorise."
+                  : "Drop a SAR scene on the left. The segmenter will outline every slick and score the surface coverage."}
               </p>
             </div>
           )}
@@ -332,7 +398,14 @@ export default function App() {
             </section>
           )}
 
-          {analysis ? (
+          {mode === "sar" ? (
+            <SarPanel
+              status={sarStatus}
+              result={sar}
+              threshold={sarThreshold}
+              onThreshold={setSarThreshold}
+            />
+          ) : analysis ? (
             <>
               <AnalysisPanel analysis={analysis} selected={selected} onSelect={setSelected} />
 
@@ -348,10 +421,18 @@ export default function App() {
                       : "Select a detection to drift it, or use the first georeferenced item."}
                   </p>
                   <div className="grid-2">
-                    <button className="btn" onClick={() => runDrift(false)} disabled={!hasLocated || driftBusy}>
+                    <button
+                      className="btn"
+                      onClick={() => runDrift(false)}
+                      disabled={!hasLocated || driftBusy}
+                    >
                       Forecast 6 h
                     </button>
-                    <button className="btn ghost" onClick={() => runDrift(true)} disabled={!hasLocated || driftBusy}>
+                    <button
+                      className="btn ghost"
+                      onClick={() => runDrift(true)}
+                      disabled={!hasLocated || driftBusy}
+                    >
                       Trace source
                     </button>
                   </div>
@@ -376,7 +457,8 @@ export default function App() {
                   {reverseDrift && (
                     <div className="banner info" style={{ marginTop: 11, marginBottom: 0 }}>
                       Hindcast places the likely entry point{" "}
-                      <b>{(reverseDrift.displacement_m / 1000).toFixed(1)} km</b> upstream over 48 h.
+                      <b>{(reverseDrift.displacement_m / 1000).toFixed(1)} km</b> upstream over
+                      48 h.
                     </div>
                   )}
                 </div>
@@ -399,8 +481,8 @@ export default function App() {
               <div className="panel-head">Awaiting scene</div>
               <div className="panel-body">
                 <p className="hint">
-                  Severity, rejected candidates, drift and the cleanup mission appear here once an
-                  image is analysed.
+                  Severity, rejected candidates, drift and the cleanup mission appear here once
+                  an image is analysed.
                 </p>
               </div>
             </section>
