@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -187,6 +188,89 @@ async def analyse_upload(
 
     payload["session_id"] = session.id
     return payload
+
+
+# ---------------------------------------------------------------------------
+# SAR oil segmentation
+#
+# A separate endpoint rather than a branch inside /api/analyse, because the
+# input is a different sensing modality. Handing a phone photograph to a model
+# trained on radar backscatter returns a confident mask of nothing.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sar/status")
+def sar_status() -> dict:
+    from ..sar import checkpoint_status
+
+    return checkpoint_status()
+
+
+@app.post("/api/sar/analyse")
+async def analyse_sar(
+    image: UploadFile = File(...),
+    threshold: float = Form(default=0.5),
+    pose: str | None = Form(default=None),
+) -> dict:
+    from PIL import Image
+
+    from ..sar import polygons, segment_array
+
+    raw = await image.read()
+    if not raw:
+        raise HTTPException(400, "empty upload")
+
+    try:
+        pil = Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"could not read image: {exc}") from exc
+
+    array = np.array(pil)
+    try:
+        result = await asyncio.to_thread(
+            segment_array, array, threshold=max(0.05, min(threshold, 0.95))
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            503, "No oil segmentation checkpoint available. Train one first."
+        ) from exc
+
+    shapes = await asyncio.to_thread(polygons, result.mask)
+
+    # Feeds the same severity engine as the optical branch: a slick is a slick
+    # regardless of which sensor saw it.
+    coverage = result.oil_fraction * 100.0
+    scene = Scene(
+        regions=(RegionCoverage("oil_slick", coverage, 1.0),),
+        water_area_m2=0.0,
+    )
+    mpsi = compute_mpsi(scene)
+
+    declared = json.loads(pose) if pose else {}
+    footprint = None
+    if {"lat", "lon"} <= declared.keys():
+        footprint = {"lat": float(declared["lat"]), "lon": float(declared["lon"])}
+
+    return {
+        "image": {"width": pil.width, "height": pil.height},
+        "oil_fraction": round(result.oil_fraction, 5),
+        "coverage_percent": round(coverage, 2),
+        "threshold": result.threshold,
+        "polygons_px": shapes,
+        "slick_count": len(shapes),
+        "severity": {
+            "score": mpsi.score,
+            "band": mpsi.band.label,
+            "colour": mpsi.band.colour,
+        },
+        "model": {
+            "checkpoint": result.checkpoint,
+            "representative": result.representative,
+            "epoch": result.epoch,
+            "oil_iou": result.oil_iou,
+            "caveat": result.caveat,
+        },
+        "location": footprint,
+    }
 
 
 # ---------------------------------------------------------------------------
